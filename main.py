@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import traceback
 import zipfile
+import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -18,22 +19,17 @@ import jmcomic
 from jmcomic import (
     JmOption,
     JmAlbumDetail,
-    JmPhotoDetail,
-    JmSearchPage,
     JmModuleConfig,
     JmcomicException,
     MissingAlbumPhotoException,
     RequestRetryAllFailException,
     create_option_by_file,
     download_album,
-    download_photo,
     DirRule,
     ExceptionTool,
     time_stamp,
     current_thread,
     fix_windir_name,
-    write_text,
-    mkdir_if_not_exists,
 )
 from jmcomic import JmMagicConstants
 from jmcomic.jm_plugin import Img2pdfPlugin
@@ -43,7 +39,7 @@ from jmcomic.jm_downloader import JmDownloader
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.7.0")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.7.1")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -53,7 +49,6 @@ class JmComicPlugin(Star):
         data_dir = StarTools.get_data_dir("jmcomic")
         self.global_base_dir = Path(self.config.get("download_dir", data_dir))
         self.global_base_dir.mkdir(parents=True, exist_ok=True)
-
 
         # 默认选项文件路径
         self.option_file = self.config.get("option_file", str(DEFAULT_OPTION_FILE))
@@ -75,8 +70,13 @@ class JmComicPlugin(Star):
         # 检查 img2pdf 是否可用（仅用于友好提示）
         self.has_img2pdf = self._check_img2pdf()
 
-        # 预热域名
-        asyncio.create_task(self._warmup())
+        # 安全地启动预热（避免无事件循环错误）
+        self._need_warmup = True
+        try:
+            asyncio.create_task(self._warmup())
+            self._need_warmup = False
+        except RuntimeError:
+            logger.warning("当前无运行中事件循环，预热任务推迟到首次请求时执行")
 
     def _check_img2pdf(self) -> bool:
         try:
@@ -89,18 +89,30 @@ class JmComicPlugin(Star):
     async def _warmup(self):
         try:
             await asyncio.to_thread(JmModuleConfig.get_html_domain)
+            self._need_warmup = False
         except Exception as e:
             logger.warning(f"预热域名失败: {e}")
 
+    # -------------------- 路径安全处理 --------------------
+    def _safe_user_dir(self, user_id: str) -> str:
+        """将用户 ID 转换为安全的目录名（只保留字母数字下划线）"""
+        safe = re.sub(r'[^a-zA-Z0-9_-]', '_', user_id)
+        return safe or "unknown_user"
+
     # -------------------- 辅助方法 --------------------
     async def _get_option(self, user_id: str = None, cmd_overrides: dict = None) -> JmOption:
+        # 如果需要预热且尚未预热，立即执行预热
+        if self._need_warmup:
+            asyncio.create_task(self._warmup())  # 不等待
+
         if self.option_file and Path(self.option_file).exists():
             option = await asyncio.to_thread(create_option_by_file, self.option_file)
         else:
             option = await asyncio.to_thread(JmOption.default)
 
         if user_id:
-            user_dir = self.global_base_dir / user_id
+            safe_id = self._safe_user_dir(user_id)
+            user_dir = self.global_base_dir / safe_id
         else:
             user_dir = self.global_base_dir
         option.dir_rule.base_dir = str(user_dir)
@@ -131,14 +143,14 @@ class JmComicPlugin(Star):
         try:
             return await self._run_sync(func, *args, **kwargs)
         except MissingAlbumPhotoException as e:
-            raise Exception(f"本子/章节不存在: {e}")
+            raise Exception(f"本子/章节不存在: {e}") from e
         except RequestRetryAllFailException as e:
-            raise Exception(f"请求重试失败，请稍后重试: {e}")
+            raise Exception(f"请求重试失败，请稍后重试: {e}") from e
         except JmcomicException as e:
-            raise Exception(f"jmcomic 错误: {e}")
+            raise Exception(f"jmcomic 错误: {e}") from e
         except Exception as e:
             logger.error(traceback.format_exc())
-            raise Exception(f"未知错误: {e}")
+            raise Exception(f"未知错误: {e}") from e
 
     async def _safe_call_with_timeout(self, func, timeout=30, *args, **kwargs):
         loop = asyncio.get_event_loop()
@@ -169,10 +181,10 @@ class JmComicPlugin(Star):
 
     # -------------------- 命令解析（支持范围） --------------------
     def _parse_album_command(self, args: List[str]) -> Tuple[str, Optional[Tuple[int, int]]]:
-        album_id = args[2]
+        album_id = args[1]  # 注意：命令格式为 /jm download <id> [range] 或 /jmz <id> [range]
         start = end = None
-        if len(args) >= 4:
-            range_str = args[3]
+        if len(args) >= 3:
+            range_str = args[2]
             if '-' in range_str:
                 parts = range_str.split('-')
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
@@ -185,8 +197,9 @@ class JmComicPlugin(Star):
     # -------------------- 命令 --------------------
     @filter.command("jm download")
     async def command_jm_download(self, event: AstrMessageEvent):
+        """下载本子，支持范围选择，生成PDF"""
         args = event.message_str.strip().split()
-        if len(args) < 3:
+        if len(args) < 2:
             yield event.plain_result("请提供本子ID，例如：/jm download 123")
             return
         album_id, range_tuple = self._parse_album_command(args)
@@ -201,27 +214,16 @@ class JmComicPlugin(Star):
 
     @filter.command("jmz")
     async def command_jmz(self, event: AstrMessageEvent):
+        """下载本子并打包为ZIP"""
         args = event.message_str.strip().split()
         if len(args) < 2:
             yield event.plain_result("请提供本子ID，例如：/jmz 123")
             return
-        album_id = args[1]
-        start = end = None
-        range_tuple = None
-        if len(args) >= 3:
-            range_str = args[2]
-            if '-' in range_str:
-                parts = range_str.split('-')
-                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                    start = int(parts[0])
-                    end = int(parts[1])
-            elif range_str.isdigit():
-                start = end = int(range_str)
-            if start is not None:
-                range_tuple = (start, end)
+        album_id, range_tuple = self._parse_album_command(args)  # 复用解析函数
         overrides = {}
         if range_tuple:
             overrides['chapter_range'] = range_tuple
+            start, end = range_tuple
             yield event.plain_result(f"开始下载本子 {album_id} 第{start}~{end}章（ZIP打包），请稍候...")
         else:
             yield event.plain_result(f"开始下载本子 {album_id}（ZIP打包），请稍候...")
@@ -229,6 +231,7 @@ class JmComicPlugin(Star):
 
     @filter.command("jms")
     async def command_jms(self, event: AstrMessageEvent):
+        """搜索本子"""
         args = event.message_str.strip().split()
         if len(args) < 2:
             yield event.plain_result("请提供搜索关键词，例如：/jms 火影")
@@ -242,6 +245,7 @@ class JmComicPlugin(Star):
 
     @filter.command("jmr")
     async def command_jmr(self, event: AstrMessageEvent):
+        """获取排行榜（默认月榜）"""
         args = event.message_str.strip().split()
         rank_type = "month"
         page = 1
@@ -255,6 +259,7 @@ class JmComicPlugin(Star):
 
     @filter.command("jm detail")
     async def command_detail(self, event: AstrMessageEvent):
+        """查看本子详情（含封面和标签）"""
         args = event.message_str.strip().split()
         if len(args) < 3:
             yield event.plain_result("请提供本子ID，例如：/jm detail 123")
@@ -265,6 +270,7 @@ class JmComicPlugin(Star):
 
     @filter.command("jm help")
     async def command_help(self, event: AstrMessageEvent):
+        """显示帮助信息"""
         help_text = """
 【禁漫下载插件使用说明】
 
@@ -282,6 +288,7 @@ class JmComicPlugin(Star):
     # -------------------- 下载任务 --------------------
     async def _download_album_task(self, event: AstrMessageEvent, album_id: str, pack: bool, overrides: dict):
         user_id = event.get_sender_id()
+        sent_files = []  # 记录发送的文件，用于清理
         try:
             option = await self._get_option(user_id, overrides)
             chapter_range = overrides.get('chapter_range')
@@ -301,45 +308,47 @@ class JmComicPlugin(Star):
 
             if pack:
                 zip_path = await self._handle_zip_result(event, album_id, album_dir)
-                sent_files = [zip_path] if zip_path else []
+                if zip_path:
+                    sent_files.append(zip_path)
             else:
                 if not self.has_img2pdf:
-                    await event.send(event.plain_result("PDF 功能不可用，请安装 img2pdf。"))
-                    return
-                plugin = Img2pdfPlugin(option)
-                pdf_dir = self.global_base_dir / user_id / "pdfs"
-                pdf_dir.mkdir(parents=True, exist_ok=True)
-
-                await self._run_sync(
-                    plugin.invoke,
-                    album=album,
-                    downloader=downloader,
-                    pdf_dir=str(pdf_dir),
-                    filename_rule='Aid',
-                    delete_original_file=False,
-                )
-
-                await asyncio.sleep(1)
-                pdf_path = pdf_dir / f"{album_id}.pdf"
-                if pdf_path.exists():
-                    await event.send(event.chain_result([
-                        Plain(f"本子 {album_id} 下载完成，已转换为 PDF："),
-                        File(file=str(pdf_path), name=pdf_path.name)
-                    ]))
-                    sent_files = [pdf_path]
+                    # PDF 不可用，发送错误消息，但继续清理（不 return）
+                    await event.send(event.plain_result("PDF 功能不可用，请安装 img2pdf。已下载图片，将执行清理规则。"))
                 else:
-                    pdf_files = list(pdf_dir.glob(f"{album_id}*.pdf"))
-                    if pdf_files:
-                        pdf_path = pdf_files[0]
+                    plugin = Img2pdfPlugin(option)
+                    pdf_dir = self.global_base_dir / self._safe_user_dir(user_id) / "pdfs"
+                    pdf_dir.mkdir(parents=True, exist_ok=True)
+
+                    await self._run_sync(
+                        plugin.invoke,
+                        album=album,
+                        downloader=downloader,
+                        pdf_dir=str(pdf_dir),
+                        filename_rule='Aid',
+                        delete_original_file=False,
+                    )
+
+                    await asyncio.sleep(1)
+                    pdf_path = pdf_dir / f"{album_id}.pdf"
+                    if pdf_path.exists():
                         await event.send(event.chain_result([
                             Plain(f"本子 {album_id} 下载完成，已转换为 PDF："),
                             File(file=str(pdf_path), name=pdf_path.name)
                         ]))
-                        sent_files = [pdf_path]
+                        sent_files.append(pdf_path)
                     else:
-                        await event.send(event.plain_result("PDF 生成失败，未找到生成的 PDF 文件"))
-                        sent_files = []
+                        pdf_files = list(pdf_dir.glob(f"{album_id}*.pdf"))
+                        if pdf_files:
+                            pdf_path = pdf_files[0]
+                            await event.send(event.chain_result([
+                                Plain(f"本子 {album_id} 下载完成，已转换为 PDF："),
+                                File(file=str(pdf_path), name=pdf_path.name)
+                            ]))
+                            sent_files.append(pdf_path)
+                        else:
+                            await event.send(event.plain_result("PDF 生成失败，未找到生成的 PDF 文件"))
 
+            # 清理逻辑
             if sent_files and self.cleanup_mode == "after_send":
                 asyncio.create_task(self._delete_after_send(album_dir, sent_files))
             elif self.cleanup_mode == "count":
@@ -394,7 +403,8 @@ class JmComicPlugin(Star):
     async def _cleanup_old_albums(self, user_id: str):
         if self.cleanup_mode != "count" or self.max_albums <= 0:
             return
-        user_root = self.global_base_dir / user_id
+        safe_id = self._safe_user_dir(user_id)
+        user_root = self.global_base_dir / safe_id
         if not user_root.exists():
             return
         exclude_dirs = {"pdfs", "logs"}
@@ -406,16 +416,24 @@ class JmComicPlugin(Star):
         await self._run_sync(self._delete_album_folders, user_id, to_delete)
 
     def _delete_album_folders(self, user_id: str, folders: List[Path]):
-        pdf_dir = self.global_base_dir / user_id / "pdfs"
+        safe_id = self._safe_user_dir(user_id)
+        pdf_dir = self.global_base_dir / safe_id / "pdfs"
         for folder in folders:
             album_id = folder.name
+            # 删除文件夹
             if folder.exists():
                 shutil.rmtree(folder, ignore_errors=True)
                 logger.info(f"已删除旧本子文件夹: {folder}")
+            # 删除对应的 PDF 文件
             if pdf_dir.exists():
                 for pf in pdf_dir.glob(f"{album_id}*.pdf"):
                     pf.unlink()
                     logger.info(f"已删除旧 PDF 文件: {pf}")
+            # 删除对应的 ZIP 文件（同级目录）
+            zip_file = folder.with_suffix(".zip")
+            if zip_file.exists():
+                zip_file.unlink()
+                logger.info(f"已删除旧 ZIP 文件: {zip_file}")
 
     # -------------------- 搜索 --------------------
     async def _do_search(self, event: AstrMessageEvent, keyword: str, page: int):
