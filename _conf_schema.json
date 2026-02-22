@@ -1,0 +1,32 @@
+{
+  "download_dir": {
+    "description": "下载根目录，所有下载的文件将保存在此目录下（支持绝对路径或相对AstrBot工作目录的路径）",
+    "type": "string",
+    "default": "./data/jm_downloads"
+  },
+  "cleanup_mode": {
+    "description": "清理模式：'count'（按数量保留）或 'after_send'（发送后立即删除所有文件）",
+    "type": "string",
+    "default": "count",
+    "options": ["count", "after_send"],
+    "hint": "count：保留最多 max_albums 个本子；after_send：每次发送后立即删除本次下载的所有文件（包括原图和生成的文件）"
+  },
+  "max_albums": {
+    "description": "当 cleanup_mode 为 'count' 时，每个用户最多保留的本子数量，超过时将自动删除最旧的本子",
+    "type": "int",
+    "default": 10,
+    "hint": "设置为0表示不限制"
+  },
+  "enable_jm_log": {
+    "description": "是否显示jmcomic库的内部调试日志",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后会在控制台输出更多调试信息，用于排查问题"
+  },
+  "option_file": {
+    "description": "自定义jmcomic选项配置文件路径（留空则使用内置默认配置）",
+    "type": "string",
+    "default": "",
+    "hint": "指定一个YAML配置文件路径，用于精细控制下载行为，如代理、线程数等"
+  }
+}

@@ -155,10 +155,6 @@ A: 支持。每个用户（QQ 号）拥有独立的下载子目录，清理操�
 
 [AGPL-3.0 license](LICENSE)
 
-###致谢
-本插件引用了部分[JMComic-Crawler-Python](https://github.com/hect0x7/JMComic-Crawler-Python.git)
-
-
 ---
 
 如有任何问题或建议，欢迎提交 [Issue](https://github.com/yourusername/astrbot_plugin_jmcomic/issues) 或 Pull Request。
