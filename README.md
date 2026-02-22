@@ -218,7 +218,7 @@ A: 可能是封面下载失败，请检查网络和 jmcomic 配置。如果不�
 ## 🙏 致谢
 
 - [hect0x7/JMComic-Crawler-Python](https://github.com/hect0x7/JMComic-Crawler-Python) – 强大的禁漫爬虫库。
-- [Soulter/AstrBot](https://github.com/Soulter/AstrBot) – AstrBOt插件模板
+- [Soulter/AstrBot](https://github.com/Soulter/AstrBot) – AstrBot插件模板
 
 ---
 
