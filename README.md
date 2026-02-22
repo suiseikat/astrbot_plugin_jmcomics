@@ -1,10 +1,10 @@
-# AstrBot 禁漫下载插件
+# AstrBot jm漫画下载搜索插件
 
 [![AGPL-3.0 License](https://img.shields.io/github/license/yourname/astrbot_plugin_jmcomic)](LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%E6%8F%92%E4%BB%B6-orange)](https://github.com/Soulter/AstrBot)
 
-本插件为 [AstrBot](https://github.com/Soulter/AstrBot) 提供了禁漫天堂（JMComic）的搜索、下载、自动生成 PDF 或 ZIP 打包功能，支持**范围下载**、**排行榜**、**图文详情**，并内置两种磁盘清理模式，有效管理存储空间。
+本插件为 [AstrBot](https://github.com/Soulter/AstrBot) 提供了JMComic的搜索、下载、自动生成 PDF 或 ZIP 打包功能，支持**范围下载**、**排行榜**、**图文详情**，并内置两种磁盘清理模式，有效管理存储空间。
 
 ---
 
