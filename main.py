@@ -355,14 +355,7 @@ class JmComicPlugin(Star):
 - count：保留最多 max_albums 个本子，超过自动删除最旧
 - after_send：每次发送后立即删除本次下载的所有文件（包括原图和生成的文件）
 
-示例：
-/jm download 123             下载本子123全部章节为PDF
-/jm download 123 1-5         下载第1-5章为PDF
-/jmz 123                      下载本子123全部章节为ZIP
-/jms 火影 2                   搜索火影第2页
-/jmr                          月榜第1页
-/jmr week 2                   周榜第2页
-/jm detail 123                查看本子123详情
+
         """.strip()
         yield event.plain_result(help_text)
 
