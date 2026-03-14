@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger
-from astrbot.api.message_components import Plain, File, Node, Image as MsgImage  # 别名避免冲突
+from astrbot.api import message_components  # 使用模块导入，避免命名冲突
 
 # 尝试导入 jmcomic，若失败则标记并后续提示
 try:
@@ -54,7 +54,7 @@ except ImportError as e:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.3")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.4")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -212,11 +212,17 @@ class JmComicPlugin(Star):
         return RangeDownloader
 
     # -------------------- 命令解析（支持范围、压缩参数） --------------------
-    def _parse_album_command(self, args: List[str]) -> Tuple[str, Optional[Tuple[int, int]], Dict[str, Any]]:
-        album_id = args[1]
+    def _parse_album_command(self, args: List[str], start_idx: int) -> Tuple[str, Optional[Tuple[int, int]], Dict[str, Any]]:
+        """
+        解析命令参数
+        :param args: 完整参数列表
+        :param start_idx: 本子ID所在的索引位置
+        :return: (album_id, (start, end) 或 None, 额外参数字典)
+        """
+        album_id = args[start_idx]
         start = end = None
         extra = {}
-        i = 2
+        i = start_idx + 1
         while i < len(args):
             arg = args[i]
             if arg.startswith('--'):
@@ -248,10 +254,10 @@ class JmComicPlugin(Star):
             yield event.plain_result("jmcomic 库未正确安装，无法使用下载功能")
             return
         args = event.message_str.strip().split()
-        if len(args) < 2:
+        if len(args) < 3:  # 需要至少 "jm download" 和 ID
             yield event.plain_result("请提供本子ID，例如：/jm download 123")
             return
-        album_id, range_tuple, extra = self._parse_album_command(args)
+        album_id, range_tuple, extra = self._parse_album_command(args, 2)  # 索引2是ID
         overrides = {}
         if range_tuple:
             overrides['chapter_range'] = range_tuple
@@ -271,7 +277,7 @@ class JmComicPlugin(Star):
         if len(args) < 2:
             yield event.plain_result("请提供本子ID，例如：/jmz 123")
             return
-        album_id, range_tuple, extra = self._parse_album_command(args)
+        album_id, range_tuple, extra = self._parse_album_command(args, 1)  # 索引1是ID
         overrides = {}
         if range_tuple:
             overrides['chapter_range'] = range_tuple
@@ -685,7 +691,8 @@ class JmComicPlugin(Star):
                 cover_path = temp_cover_dir / cover_filename
 
                 await self._run_sync(client.download_album_cover, album_id, str(cover_path))
-                node_content.append(MsgImage.fromFileSystem(str(cover_path)))  # 使用别名 MsgImage
+                # 使用 message_components.Image.fromFileSystem 避免命名冲突
+                node_content.append(message_components.Image.fromFileSystem(str(cover_path)))
 
                 # 延迟 300 秒后删除，确保消息发送完成
                 asyncio.create_task(self._delayed_delete(cover_path, 300))
