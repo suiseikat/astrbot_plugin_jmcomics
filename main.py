@@ -14,7 +14,8 @@ from typing import Optional, List, Dict, Any, Tuple
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger
-from astrbot.api import message_components  # 使用模块导入，避免命名冲突
+from astrbot.api.message_components import Plain, File, Node
+from astrbot.api.message_components import Image as MsgImage  # 明确别名，避免冲突
 
 # 尝试导入 jmcomic，若失败则标记并后续提示
 try:
@@ -54,7 +55,7 @@ except ImportError as e:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.4")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.5")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -211,18 +212,20 @@ class JmComicPlugin(Star):
                 return detail
         return RangeDownloader
 
-    # -------------------- 命令解析（支持范围、压缩参数） --------------------
-    def _parse_album_command(self, args: List[str], start_idx: int) -> Tuple[str, Optional[Tuple[int, int]], Dict[str, Any]]:
+    # -------------------- 命令解析（简化版，仅提取 ID 和可选范围/参数） --------------------
+    def _parse_album_command(self, args: List[str], cmd_prefix_len: int) -> Tuple[str, Optional[Tuple[int, int]], Dict[str, Any]]:
         """
         解析命令参数
-        :param args: 完整参数列表
-        :param start_idx: 本子ID所在的索引位置
+        :param args: 完整参数列表，如 ["jm", "download", "123", "1-5", "--quality=80"]
+        :param cmd_prefix_len: 命令前缀长度，例如 "jm download" 长度为 2
         :return: (album_id, (start, end) 或 None, 额外参数字典)
         """
-        album_id = args[start_idx]
+        if len(args) <= cmd_prefix_len:
+            raise ValueError("缺少本子ID")
+        album_id = args[cmd_prefix_len]
         start = end = None
         extra = {}
-        i = start_idx + 1
+        i = cmd_prefix_len + 1
         while i < len(args):
             arg = args[i]
             if arg.startswith('--'):
@@ -249,7 +252,7 @@ class JmComicPlugin(Star):
     # -------------------- 命令 --------------------
     @filter.command("jm download")
     async def command_jm_download(self, event: AstrMessageEvent):
-        """下载本子，支持范围选择，生成PDF（支持 --quality 和 --max-size 压缩参数）"""
+        """下载本子，支持范围选择，生成PDF（可选 --quality 和 --max-size 压缩参数）"""
         if not self.jmcomic_available:
             yield event.plain_result("jmcomic 库未正确安装，无法使用下载功能")
             return
@@ -257,7 +260,12 @@ class JmComicPlugin(Star):
         if len(args) < 3:  # 需要至少 "jm download" 和 ID
             yield event.plain_result("请提供本子ID，例如：/jm download 123")
             return
-        album_id, range_tuple, extra = self._parse_album_command(args, 2)  # 索引2是ID
+        try:
+            album_id, range_tuple, extra = self._parse_album_command(args, 2)  # 命令前缀 "jm download" 长度为 2
+        except ValueError as e:
+            yield event.plain_result(str(e))
+            return
+
         overrides = {}
         if range_tuple:
             overrides['chapter_range'] = range_tuple
@@ -269,7 +277,7 @@ class JmComicPlugin(Star):
 
     @filter.command("jmz")
     async def command_jmz(self, event: AstrMessageEvent):
-        """下载本子并打包为ZIP"""
+        """下载本子并打包为ZIP（支持范围选择）"""
         if not self.jmcomic_available:
             yield event.plain_result("jmcomic 库未正确安装，无法使用下载功能")
             return
@@ -277,7 +285,12 @@ class JmComicPlugin(Star):
         if len(args) < 2:
             yield event.plain_result("请提供本子ID，例如：/jmz 123")
             return
-        album_id, range_tuple, extra = self._parse_album_command(args, 1)  # 索引1是ID
+        try:
+            album_id, range_tuple, extra = self._parse_album_command(args, 1)  # 命令 "jmz" 长度为 1
+        except ValueError as e:
+            yield event.plain_result(str(e))
+            return
+
         overrides = {}
         if range_tuple:
             overrides['chapter_range'] = range_tuple
@@ -449,10 +462,9 @@ class JmComicPlugin(Star):
                 if zip_path:
                     sent_files.append(zip_path)
             else:
-                # 解析压缩参数
+                # 解析压缩参数（若无则使用默认值）
                 quality = int(extra.get('quality', 85))
                 max_size = int(extra.get('max-size', 0))
-                # 限制 quality 范围
                 quality = max(1, min(100, quality))
 
                 pdf_dir = self.global_base_dir / self._safe_user_dir(user_id) / "pdfs"
@@ -691,8 +703,8 @@ class JmComicPlugin(Star):
                 cover_path = temp_cover_dir / cover_filename
 
                 await self._run_sync(client.download_album_cover, album_id, str(cover_path))
-                # 使用 message_components.Image.fromFileSystem 避免命名冲突
-                node_content.append(message_components.Image.fromFileSystem(str(cover_path)))
+                # 使用 MsgImage 别名，确保是 AstrBot 的 Image 组件
+                node_content.append(MsgImage.fromFileSystem(str(cover_path)))
 
                 # 延迟 300 秒后删除，确保消息发送完成
                 asyncio.create_task(self._delayed_delete(cover_path, 300))
