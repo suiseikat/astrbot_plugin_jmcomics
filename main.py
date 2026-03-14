@@ -687,8 +687,8 @@ class JmComicPlugin(Star):
                 await self._run_sync(client.download_album_cover, album_id, str(cover_path))
                 node_content.append(Image.fromFileSystem(str(cover_path)))
 
-                # 延迟 60 秒后删除，确保消息发送完成
-                asyncio.create_task(self._delayed_delete(cover_path, 60))
+                # 延迟 300 秒后删除，确保消息发送完成
+                asyncio.create_task(self._delayed_delete(cover_path, 300))
             except Exception as e:
                 logger.warning(f"下载封面失败: {e}")
 
