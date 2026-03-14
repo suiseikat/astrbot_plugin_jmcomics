@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger
-from astrbot.api.message_components import Plain, File, Node, Image
+from astrbot.api.message_components import Plain, File, Node, Image as MsgImage  # 别名避免冲突
 
 # 尝试导入 jmcomic，若失败则标记并后续提示
 try:
@@ -54,7 +54,7 @@ except ImportError as e:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.2")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.3")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -685,7 +685,7 @@ class JmComicPlugin(Star):
                 cover_path = temp_cover_dir / cover_filename
 
                 await self._run_sync(client.download_album_cover, album_id, str(cover_path))
-                node_content.append(Image.fromFileSystem(str(cover_path)))
+                node_content.append(MsgImage.fromFileSystem(str(cover_path)))  # 使用别名 MsgImage
 
                 # 延迟 300 秒后删除，确保消息发送完成
                 asyncio.create_task(self._delayed_delete(cover_path, 300))
