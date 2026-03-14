@@ -54,7 +54,7 @@ except ImportError as e:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.1")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.2")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -633,7 +633,17 @@ class JmComicPlugin(Star):
             logger.error(traceback.format_exc())
             await event.send(event.plain_result(f"获取排行榜失败: {e}"))
 
-    # -------------------- 详情（含封面和标签） --------------------
+    # -------------------- 详情（含封面和标签） + 延迟删除封面 --------------------
+    async def _delayed_delete(self, path: Path, delay: int):
+        """延迟删除文件，给消息发送留出时间"""
+        await asyncio.sleep(delay)
+        try:
+            if path.exists():
+                path.unlink()
+                logger.debug(f"已删除临时封面: {path}")
+        except Exception as e:
+            logger.warning(f"删除临时封面失败: {e}")
+
     async def _do_detail(self, event: AstrMessageEvent, album_id: str):
         cover_path = None
         try:
@@ -667,12 +677,18 @@ class JmComicPlugin(Star):
 
             node_content = [Plain("\n".join(lines))]
 
-            # 下载封面
+            # 下载封面（使用持久化临时目录 + 延迟删除）
             try:
-                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                    cover_path = tmp.name
-                await self._run_sync(client.download_album_cover, album_id, cover_path)
-                node_content.append(Image.fromFileSystem(cover_path))
+                temp_cover_dir = self.global_base_dir / "temp_covers"
+                temp_cover_dir.mkdir(parents=True, exist_ok=True)
+                cover_filename = f"cover_{album_id}_{int(time.time())}.jpg"
+                cover_path = temp_cover_dir / cover_filename
+
+                await self._run_sync(client.download_album_cover, album_id, str(cover_path))
+                node_content.append(Image.fromFileSystem(str(cover_path)))
+
+                # 延迟 60 秒后删除，确保消息发送完成
+                asyncio.create_task(self._delayed_delete(cover_path, 60))
             except Exception as e:
                 logger.warning(f"下载封面失败: {e}")
 
@@ -682,12 +698,7 @@ class JmComicPlugin(Star):
 
         except Exception as e:
             await event.send(event.plain_result(f"获取详情失败: {e}"))
-        finally:
-            if cover_path and os.path.exists(cover_path) and self.delete_temp_cover:
-                try:
-                    os.unlink(cover_path)
-                except Exception as e:
-                    logger.warning(f"删除临时封面文件失败: {e}")
+        # 不再需要 finally 删除，由延迟任务处理
 
     # -------------------- 插件生命周期 --------------------
     async def terminate(self):
