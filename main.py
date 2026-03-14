@@ -339,7 +339,7 @@ class JmComicPlugin(Star):
     async def command_help(self, event: AstrMessageEvent):
         """显示帮助信息"""
         help_text = """
-【禁漫下载插件使用说明】
+【禁漫下载插件使用说明】v2.9.5
 
 /jm download <本子号> [范围] [--quality=80] [--max-size=1920]  
     下载本子指定范围章节（默认全部），生成PDF发送。范围示例：1-10 或 5
