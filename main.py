@@ -41,10 +41,10 @@ except ImportError as e:
     JMCOMIC_AVAILABLE = False
     logger.error(f"导入 jmcomic 失败: {e}，请手动安装: pip install jmcomic")
 
-# 尝试导入 PDF 相关库
+# 尝试导入 PDF 相关库，使用别名避免与 AstrBot 消息组件的 Image 冲突
 try:
     import img2pdf
-    from PIL import Image
+    from PIL import Image as PILImage
     PDF_AVAILABLE = True
 except ImportError as e:
     PDF_AVAILABLE = False
@@ -54,7 +54,7 @@ except ImportError as e:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.0")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.1")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -382,13 +382,13 @@ class JmComicPlugin(Star):
             tmp_paths = []
             for img_path in image_files:
                 try:
-                    img = Image.open(img_path)
+                    img = PILImage.open(img_path)
                     # 转换为 RGB（PDF 需要）
                     if img.mode != 'RGB':
                         img = img.convert('RGB')
                     # 缩放尺寸（如果指定了 max_size）
                     if max_size > 0:
-                        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                        img.thumbnail((max_size, max_size), PILImage.Resampling.LANCZOS)
                     # 保存为 JPEG 格式到临时目录
                     out_name = img_path.stem + ".jpg"
                     out_path = Path(tmpdir) / out_name
