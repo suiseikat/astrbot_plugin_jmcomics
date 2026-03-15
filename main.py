@@ -8,13 +8,16 @@ import zipfile
 import re
 import subprocess
 import sys
+import time  # 新增导入
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime, timedelta
 
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger
-from astrbot.api import message_components  # 使用模块导入，避免命名冲突
+from astrbot.api.message_components import Plain, File, Node
+from astrbot.api.message_components import Image as MsgImage
 
 # 尝试导入 jmcomic，若失败则标记并后续提示
 try:
@@ -54,7 +57,7 @@ except ImportError as e:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.4")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.6")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -84,8 +87,8 @@ class JmComicPlugin(Star):
         self.cleanup_mode = self.config.get("cleanup_mode", "count")
         self.max_albums = self.config.get("max_albums", 10) if self.cleanup_mode == "count" else 0
 
-        # 是否删除临时封面文件
-        self.delete_temp_cover = self.config.get("delete_temp_cover", True)
+        # 封面文件保留天数（默认7天）
+        self.cover_keep_days = self.config.get("cover_keep_days", 7)
 
         # 检查核心库是否可用
         self.jmcomic_available = JMCOMIC_AVAILABLE
@@ -106,6 +109,9 @@ class JmComicPlugin(Star):
                 self._need_warmup = False
             except RuntimeError:
                 logger.warning("当前无运行中事件循环，预热任务推迟到首次请求时执行")
+
+        # 启动定时清理过期封面文件的任务
+        asyncio.create_task(self._cleanup_expired_covers())
 
     async def _warmup(self):
         if not self.jmcomic_available:
@@ -212,17 +218,19 @@ class JmComicPlugin(Star):
         return RangeDownloader
 
     # -------------------- 命令解析（支持范围、压缩参数） --------------------
-    def _parse_album_command(self, args: List[str], start_idx: int) -> Tuple[str, Optional[Tuple[int, int]], Dict[str, Any]]:
+    def _parse_album_command(self, args: List[str], cmd_prefix_len: int) -> Tuple[str, Optional[Tuple[int, int]], Dict[str, Any]]:
         """
         解析命令参数
-        :param args: 完整参数列表
-        :param start_idx: 本子ID所在的索引位置
+        :param args: 完整参数列表，如 ["jm", "download", "123", "1-5", "--quality=80"]
+        :param cmd_prefix_len: 命令前缀长度，例如 "jm download" 长度为 2
         :return: (album_id, (start, end) 或 None, 额外参数字典)
         """
-        album_id = args[start_idx]
+        if len(args) <= cmd_prefix_len:
+            raise ValueError("缺少本子ID")
+        album_id = args[cmd_prefix_len]
         start = end = None
         extra = {}
-        i = start_idx + 1
+        i = cmd_prefix_len + 1
         while i < len(args):
             arg = args[i]
             if arg.startswith('--'):
@@ -257,7 +265,12 @@ class JmComicPlugin(Star):
         if len(args) < 3:  # 需要至少 "jm download" 和 ID
             yield event.plain_result("请提供本子ID，例如：/jm download 123")
             return
-        album_id, range_tuple, extra = self._parse_album_command(args, 2)  # 索引2是ID
+        try:
+            album_id, range_tuple, extra = self._parse_album_command(args, 2)
+        except ValueError as e:
+            yield event.plain_result(str(e))
+            return
+
         overrides = {}
         if range_tuple:
             overrides['chapter_range'] = range_tuple
@@ -269,7 +282,7 @@ class JmComicPlugin(Star):
 
     @filter.command("jmz")
     async def command_jmz(self, event: AstrMessageEvent):
-        """下载本子并打包为ZIP"""
+        """下载本子并打包为ZIP（支持范围选择）"""
         if not self.jmcomic_available:
             yield event.plain_result("jmcomic 库未正确安装，无法使用下载功能")
             return
@@ -277,7 +290,12 @@ class JmComicPlugin(Star):
         if len(args) < 2:
             yield event.plain_result("请提供本子ID，例如：/jmz 123")
             return
-        album_id, range_tuple, extra = self._parse_album_command(args, 1)  # 索引1是ID
+        try:
+            album_id, range_tuple, extra = self._parse_album_command(args, 1)
+        except ValueError as e:
+            yield event.plain_result(str(e))
+            return
+
         overrides = {}
         if range_tuple:
             overrides['chapter_range'] = range_tuple
@@ -339,7 +357,7 @@ class JmComicPlugin(Star):
     async def command_help(self, event: AstrMessageEvent):
         """显示帮助信息"""
         help_text = """
-【禁漫下载插件使用说明】v2.9.5
+【禁漫下载插件使用说明】
 
 /jm download <本子号> [范围] [--quality=80] [--max-size=1920]  
     下载本子指定范围章节（默认全部），生成PDF发送。范围示例：1-10 或 5
@@ -373,12 +391,13 @@ class JmComicPlugin(Star):
             image_files = sorted(
                 [f for f in image_dir.glob("*") if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp')]
             )
+            logger.info(f"找到 {len(image_files)} 个图片文件在 {image_dir}")
         except Exception as e:
             logger.error(f"扫描图片目录失败: {e}")
             return False
 
         if not image_files:
-            logger.warning("没有找到图片")
+            logger.warning(f"目录 {image_dir} 中没有找到支持的图片")
             return False
 
         # 创建临时目录存放压缩后的图片
@@ -386,7 +405,7 @@ class JmComicPlugin(Star):
         tmpdir = tmpdir_obj.name
         try:
             tmp_paths = []
-            for img_path in image_files:
+            for i, img_path in enumerate(image_files):
                 try:
                     img = PILImage.open(img_path)
                     # 转换为 RGB（PDF 需要）
@@ -396,7 +415,7 @@ class JmComicPlugin(Star):
                     if max_size > 0:
                         img.thumbnail((max_size, max_size), PILImage.Resampling.LANCZOS)
                     # 保存为 JPEG 格式到临时目录
-                    out_name = img_path.stem + ".jpg"
+                    out_name = f"{img_path.stem}_{i}.jpg"
                     out_path = Path(tmpdir) / out_name
                     img.save(out_path, "JPEG", quality=quality, optimize=True)
                     tmp_paths.append(str(out_path))
@@ -408,6 +427,7 @@ class JmComicPlugin(Star):
             try:
                 with open(output_pdf, "wb") as f:
                     f.write(img2pdf.convert(tmp_paths))
+                logger.info(f"PDF 生成成功: {output_pdf}")
                 return True
             except Exception as e:
                 logger.error(f"生成 PDF 失败: {e}")
@@ -443,16 +463,16 @@ class JmComicPlugin(Star):
                 downloader = None
 
             album_dir = Path(option.dir_rule.decide_album_root_dir(album))
+            logger.info(f"图片下载目录: {album_dir}")
 
             if pack:
                 zip_path = await self._handle_zip_result(event, album_id, album_dir)
                 if zip_path:
                     sent_files.append(zip_path)
             else:
-                # 解析压缩参数
+                # 解析压缩参数（若无则使用默认值）
                 quality = int(extra.get('quality', 85))
                 max_size = int(extra.get('max-size', 0))
-                # 限制 quality 范围
                 quality = max(1, min(100, quality))
 
                 pdf_dir = self.global_base_dir / self._safe_user_dir(user_id) / "pdfs"
@@ -639,17 +659,25 @@ class JmComicPlugin(Star):
             logger.error(traceback.format_exc())
             await event.send(event.plain_result(f"获取排行榜失败: {e}"))
 
-    # -------------------- 详情（含封面和标签） + 延迟删除封面 --------------------
-    async def _delayed_delete(self, path: Path, delay: int):
-        """延迟删除文件，给消息发送留出时间"""
-        await asyncio.sleep(delay)
-        try:
-            if path.exists():
-                path.unlink()
-                logger.debug(f"已删除临时封面: {path}")
-        except Exception as e:
-            logger.warning(f"删除临时封面失败: {e}")
+    # -------------------- 定时清理过期封面文件 --------------------
+    async def _cleanup_expired_covers(self):
+        """定期删除超过保留天数的封面文件"""
+        while True:
+            try:
+                cover_dir = self.global_base_dir / "temp_covers"
+                if cover_dir.exists():
+                    cutoff = datetime.now() - timedelta(days=self.cover_keep_days)
+                    for file in cover_dir.glob("*.jpg"):
+                        mtime = datetime.fromtimestamp(file.stat().st_mtime)
+                        if mtime < cutoff:
+                            file.unlink()
+                            logger.debug(f"已删除过期封面: {file}")
+            except Exception as e:
+                logger.error(f"清理过期封面时出错: {e}")
+            # 每天检查一次
+            await asyncio.sleep(86400)
 
+    # -------------------- 详情（含封面和标签） --------------------
     async def _do_detail(self, event: AstrMessageEvent, album_id: str):
         cover_path = None
         try:
@@ -683,7 +711,7 @@ class JmComicPlugin(Star):
 
             node_content = [Plain("\n".join(lines))]
 
-            # 下载封面（使用持久化临时目录 + 延迟删除）
+            # 下载封面（使用持久化临时目录，不立即删除）
             try:
                 temp_cover_dir = self.global_base_dir / "temp_covers"
                 temp_cover_dir.mkdir(parents=True, exist_ok=True)
@@ -691,11 +719,10 @@ class JmComicPlugin(Star):
                 cover_path = temp_cover_dir / cover_filename
 
                 await self._run_sync(client.download_album_cover, album_id, str(cover_path))
-                # 使用 message_components.Image.fromFileSystem 避免命名冲突
-                node_content.append(message_components.Image.fromFileSystem(str(cover_path)))
-
-                # 延迟 300 秒后删除，确保消息发送完成
-                asyncio.create_task(self._delayed_delete(cover_path, 300))
+                # 使用 MsgImage 本地文件方式（宿主机下应可访问）
+                node_content.append(MsgImage.fromFileSystem(str(cover_path)))
+                logger.info(f"封面已保存到: {cover_path}")
+                # 不立即删除，由定时任务清理
             except Exception as e:
                 logger.warning(f"下载封面失败: {e}")
 
@@ -705,7 +732,6 @@ class JmComicPlugin(Star):
 
         except Exception as e:
             await event.send(event.plain_result(f"获取详情失败: {e}"))
-        # 不再需要 finally 删除，由延迟任务处理
 
     # -------------------- 插件生命周期 --------------------
     async def terminate(self):
