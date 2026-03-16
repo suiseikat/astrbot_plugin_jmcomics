@@ -21,7 +21,7 @@ def _ensure_package(package_name, import_name=None):
         try:
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
-                "-i", "https://pypi.tuna.tsinghua.edu.cn/simple",
+                "-i", "https://mirrors.aliyun.com/pypi/simple/",
                 package_name
             ])
             __import__(import_name)
