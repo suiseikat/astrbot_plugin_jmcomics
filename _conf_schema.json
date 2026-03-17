@@ -12,10 +12,24 @@
     "hint": "count：保留最多 max_albums 个本子；after_send：每次发送后立即删除本次下载的所有文件（包括原图和生成的文件）"
   },
   "max_albums": {
-    "description": "当 cleanup_mode 为 'count' 时，每个用户最多保留的本子数量，超过时将自动删除最旧的本子",
+    "description": "当 cleanup_mode 为 'count' 时，最多保留的本子数量，超过时将自动删除最旧的本子",
     "type": "int",
     "default": 10,
     "hint": "设置为0表示不限制"
+  },
+  "cover_keep_days": {
+    "description": "封面图片保留天数，超过此天数的封面会被自动清理（设置为0表示永久保留）",
+    "type": "int",
+    "default": 7,
+    "hint": "单位：天"
+  },
+  "default_pdf_quality": {
+    "description": "生成PDF时默认的图片压缩质量（1-100，数值越高图片质量越好，文件越大）",
+    "type": "int",
+    "default": 85,
+    "min": 1,
+    "max": 100,
+    "hint": "命令行参数 --quality 可临时覆盖此默认值"
   },
   "enable_jm_log": {
     "description": "是否显示jmcomic库的内部调试日志",
