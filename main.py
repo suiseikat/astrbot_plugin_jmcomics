@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-JMComic 下载插件 - 最终版 2.9.13
-- 支持配置文件中的 cover_keep_days 和 default_pdf_quality
-- 本子下载到 download_dir/本子ID，PDF 保存到 download_dir/pdfs
-- 封面保存到 download_dir/covers（确保 NapCat 可访问）
-- 递归搜索图片，自动依赖安装（阿里源）
+JMComic 下载插件 - 最终版 2.9.14
+- 强制使用 Bd_Aid 规则，文件夹以本子ID命名
+- 封面统一保存到 covers 目录
+- 支持配置 cover_keep_days 和 default_pdf_quality
+- 自动依赖安装（阿里源）
 """
 
 import subprocess
@@ -87,7 +87,7 @@ except ImportError:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.13")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.14")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -96,14 +96,13 @@ class JmComicPlugin(Star):
         # 下载根目录
         download_dir = Path(self.config.get("download_dir", "./data/jm_downloads"))
         if not download_dir.is_absolute():
-            # 相对于 AstrBot 工作目录
             base = Path.cwd()
             self.global_base_dir = base / download_dir
         else:
             self.global_base_dir = download_dir
         self.global_base_dir.mkdir(parents=True, exist_ok=True)
 
-        # 封面目录（与下载目录同级）
+        # 封面目录
         self.cover_dir = self.global_base_dir / "covers"
         self.cover_dir.mkdir(parents=True, exist_ok=True)
 
@@ -117,7 +116,7 @@ class JmComicPlugin(Star):
         self.cleanup_mode = self.config.get("cleanup_mode", "count")
         self.max_albums = self.config.get("max_albums", 10) if self.cleanup_mode == "count" else 0
 
-        # 封面保留天数（0表示不清理）
+        # 封面保留天数
         self.cover_keep_days = self.config.get("cover_keep_days", 7)
 
         # 默认PDF质量
@@ -146,7 +145,7 @@ class JmComicPlugin(Star):
         except Exception as e:
             logger.warning(f"预热域名失败: {e}")
 
-    # ---------- 路径安全（仅用于日志等，不再用于目录隔离） ----------
+    # ---------- 路径安全（仅用于日志等） ----------
     def _safe_user_dir(self, user_id: str) -> str:
         safe = re.sub(r'[^a-zA-Z0-9_-]', '_', user_id)
         return safe or "unknown_user"
@@ -161,8 +160,11 @@ class JmComicPlugin(Star):
             else:
                 option = await asyncio.to_thread(JmOption.default)
 
-            # 所有本子直接放在 global_base_dir 下
+            # 设置根目录
             option.dir_rule.base_dir = str(self.global_base_dir)
+
+            # 强制使用 Bd_Aid 规则，确保文件夹名为本子ID
+            option.dir_rule.rule_dsl = 'Bd_Aid'
 
             if cmd_overrides:
                 self._apply_overrides(option, cmd_overrides)
@@ -445,7 +447,7 @@ class JmComicPlugin(Star):
                 album = result
                 downloader = None
 
-            # 本子目录直接在 global_base_dir 下，以本子ID命名
+            # 由于我们强制设置了 Bd_Aid，所以 album_dir 应该是 global_base_dir / album_id
             album_dir = self.global_base_dir / album_id
             logger.info(f"图片下载目录: {album_dir}")
 
@@ -454,11 +456,9 @@ class JmComicPlugin(Star):
                 if zip_path:
                     sent_files.append(zip_path)
             else:
-                # 解析压缩参数，若无则使用默认配置
                 quality = int(extra.get('quality', self.default_pdf_quality))
                 max_size = int(extra.get('max-size', 0))
 
-                # PDF 目录放在根目录下的 pdfs
                 pdf_dir = self.global_base_dir / "pdfs"
                 pdf_dir.mkdir(parents=True, exist_ok=True)
                 pdf_path = pdf_dir / f"{album_id}.pdf"
@@ -473,7 +473,6 @@ class JmComicPlugin(Star):
                 else:
                     await event.send(event.plain_result("PDF 生成失败，请查看日志"))
 
-            # 清理逻辑
             if sent_files and self.cleanup_mode == "after_send":
                 asyncio.create_task(self._delete_after_send(album_dir, sent_files))
             elif self.cleanup_mode == "count":
@@ -530,7 +529,7 @@ class JmComicPlugin(Star):
     async def _cleanup_old_albums(self):
         if self.cleanup_mode != "count" or self.max_albums <= 0:
             return
-        # 根目录下的所有文件夹，排除 pdfs 和 covers 等
+        # 根目录下的所有文件夹，排除 pdfs, covers, logs
         exclude_dirs = {"pdfs", "covers", "logs"}
         try:
             album_dirs = [d for d in self.global_base_dir.iterdir() if d.is_dir() and d.name not in exclude_dirs]
@@ -649,7 +648,7 @@ class JmComicPlugin(Star):
                 logger.error(f"清理封面出错: {e}")
             await asyncio.sleep(86400)  # 每天检查一次
 
-    # ---------- 详情（封面保存在下载根目录下的 covers 文件夹） ----------
+    # ---------- 详情（封面保存在 covers 目录） ----------
     async def _do_detail(self, event: AstrMessageEvent, album_id: str):
         cover_path = None
         try:
@@ -689,7 +688,7 @@ class JmComicPlugin(Star):
                 cover_path = self.cover_dir / cover_filename
 
                 await self._run_sync(client.download_album_cover, album_id, str(cover_path))
-                cover_path.chmod(0o644)  # 确保 NapCat 可读
+                cover_path.chmod(0o644)
                 node_content.append(MsgImage.fromFileSystem(str(cover_path)))
                 logger.info(f"封面已保存到: {cover_path}")
             except Exception as e:
