@@ -2,16 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
-JMComic 下载插件 - 最终稳定版
-支持自动安装依赖、PDF生成、ZIP打包、详情封面、智能清理
+JMComic 下载插件 - 最终修复版 2.9.9
+支持递归搜索图片、封面权限修复、绝对路径处理
 """
 
 import subprocess
 import sys
 
-# ---------- 自动安装依赖（放在最前面，避免导入错误）----------
+# ---------- 自动安装依赖（若已离线安装可注释掉）----------
 def _ensure_package(package_name, import_name=None):
-    """确保包已安装，否则自动安装"""
     if import_name is None:
         import_name = package_name
     try:
@@ -31,7 +30,7 @@ def _ensure_package(package_name, import_name=None):
             print(f"[JMPlugin] 请手动执行: pip install {package_name}")
             raise
 
-# 必须的依赖
+# 必须的依赖（如果已离线安装，可注释以下三行）
 _ensure_package("jmcomic")
 _ensure_package("img2pdf")
 _ensure_package("Pillow", "PIL")
@@ -76,20 +75,20 @@ from jmcomic import (
 from jmcomic import JmMagicConstants
 from jmcomic.jm_downloader import JmDownloader
 
-# 检查 PDF 库是否可用（自动安装后肯定可用，但保留标志位）
+# 检查 PDF 库是否可用
 try:
     import img2pdf
     from PIL import Image as PILImage
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-    logger.error("PDF 库加载失败，但这不应该发生，因为已自动安装")
+    logger.error("PDF 库未安装，请手动安装: pip install img2pdf Pillow")
 
 # ---------- 插件配置默认值 ----------
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.8")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.9")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -345,7 +344,7 @@ class JmComicPlugin(Star):
     @filter.command("jm help")
     async def command_help(self, event: AstrMessageEvent):
         help_text = """
-【禁漫下载插件使用说明】v2.6.7
+【禁漫下载插件使用说明】
 
 /jm download <本子号> [范围] [--quality=80] [--max-size=1920]
     下载本子，生成PDF。范围示例：1-10 或 5，压缩参数可选。
@@ -357,21 +356,22 @@ class JmComicPlugin(Star):
         """.strip()
         yield event.plain_result(help_text)
 
-    # ---------- PDF 生成 ----------
+    # ---------- PDF 生成（递归搜索子目录） ----------
     async def _generate_compressed_pdf(self, image_dir: Path, output_pdf: Path, quality: int = 85, max_size: int = 0) -> bool:
         if not PDF_AVAILABLE:
-            logger.error("PDF 库不可用")
+            logger.error("PDF 库未安装")
             return False
 
         if not image_dir.exists():
-            logger.error(f"图片目录不存在: {image_dir}")
+            logger.error(f"图片目录不存在: {image_dir.resolve()}")
             return False
 
+        # 递归搜索所有子目录中的图片
         try:
             image_files = sorted(
-                [f for f in image_dir.glob("*") if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp')]
+                [f for f in image_dir.rglob("*") if f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp')]
             )
-            logger.info(f"在 {image_dir} 找到 {len(image_files)} 个图片文件")
+            logger.info(f"在 {image_dir.resolve()} 找到 {len(image_files)} 个图片文件")
             if image_files:
                 logger.debug(f"前5个文件: {[f.name for f in image_files[:5]]}")
         except Exception as e:
@@ -382,6 +382,7 @@ class JmComicPlugin(Star):
             logger.warning("没有找到支持的图片")
             return False
 
+        # 创建临时目录
         tmpdir_obj = tempfile.TemporaryDirectory(prefix="jm_pdf_")
         tmpdir = tmpdir_obj.name
         try:
@@ -406,7 +407,7 @@ class JmComicPlugin(Star):
             try:
                 with open(output_pdf, "wb") as f:
                     f.write(img2pdf.convert(tmp_paths))
-                logger.info(f"PDF 生成成功: {output_pdf}")
+                logger.info(f"PDF 生成成功: {output_pdf.resolve()}")
                 return True
             except Exception as e:
                 logger.error(f"img2pdf 转换失败: {e}")
@@ -440,7 +441,8 @@ class JmComicPlugin(Star):
                 album = result
                 downloader = None
 
-            album_dir = Path(option.dir_rule.decide_album_root_dir(album))
+            # 获取绝对路径
+            album_dir = Path(option.dir_rule.decide_album_root_dir(album)).resolve()
             logger.info(f"图片下载目录: {album_dir}")
 
             if pack:
@@ -625,7 +627,7 @@ class JmComicPlugin(Star):
             logger.error(traceback.format_exc())
             await event.send(event.plain_result(f"获取排行榜失败: {e}"))
 
-    # ---------- 定时清理封面 ----------
+    # ---------- 定时清理过期封面 ----------
     async def _cleanup_expired_covers(self):
         while True:
             try:
@@ -641,7 +643,7 @@ class JmComicPlugin(Star):
                 logger.error(f"清理封面出错: {e}")
             await asyncio.sleep(86400)
 
-    # ---------- 详情 ----------
+    # ---------- 详情（含封面权限修复） ----------
     async def _do_detail(self, event: AstrMessageEvent, album_id: str):
         cover_path = None
         try:
@@ -683,6 +685,8 @@ class JmComicPlugin(Star):
                 cover_path = temp_cover_dir / cover_filename
 
                 await self._run_sync(client.download_album_cover, album_id, str(cover_path))
+                # 设置权限为644，确保NapCat可读
+                cover_path.chmod(0o644)
                 node_content.append(MsgImage.fromFileSystem(str(cover_path)))
                 logger.info(f"封面已保存到: {cover_path}")
             except Exception as e:
