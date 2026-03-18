@@ -2,17 +2,18 @@
 # -*- coding: utf-8 -*-
 
 """
-JMComic 下载插件 - 最终版 2.9.14
-- 强制使用 Bd_Aid 规则，文件夹以本子ID命名
+JMComic 下载插件 - 最终版 3.0.0
+- 修复 PDF 混用多个本子图片的问题
+- 通过第一个章节图片目录推断本子根目录，支持有/无章节子文件夹
 - 封面统一保存到 covers 目录
 - 支持配置 cover_keep_days 和 default_pdf_quality
 - 自动依赖安装（阿里源）
+- 超时60秒处理
 """
 
 import subprocess
 import sys
 
-# ---------- 自动安装依赖 ----------
 def _ensure_package(package_name, import_name=None):
     if import_name is None:
         import_name = package_name
@@ -37,7 +38,6 @@ _ensure_package("jmcomic")
 _ensure_package("img2pdf")
 _ensure_package("Pillow", "PIL")
 
-# ---------- 正式导入 ----------
 import asyncio
 import functools
 import os
@@ -87,13 +87,12 @@ except ImportError:
 DEFAULT_OPTION_FILE = Path(__file__).parent / "assets" / "option" / "option_workflow_download.yml"
 
 
-@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "2.9.14")
+@register("jmcomic_downloader", "JMComic 下载", "禁漫下载插件（支持范围下载、图文详情、智能清理）", "3.0.0")
 class JmComicPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.config = config or {}
 
-        # 下载根目录
         download_dir = Path(self.config.get("download_dir", "./data/jm_downloads"))
         if not download_dir.is_absolute():
             base = Path.cwd()
@@ -102,32 +101,23 @@ class JmComicPlugin(Star):
             self.global_base_dir = download_dir
         self.global_base_dir.mkdir(parents=True, exist_ok=True)
 
-        # 封面目录
         self.cover_dir = self.global_base_dir / "covers"
         self.cover_dir.mkdir(parents=True, exist_ok=True)
 
-        # 配置文件
         self.option_file = self.config.get("option_file", str(DEFAULT_OPTION_FILE))
         if not Path(self.option_file).exists():
             self.option_file = None
             logger.warning("未找到默认 option 配置文件，使用 jmcomic 内置默认配置")
 
-        # 清理模式
         self.cleanup_mode = self.config.get("cleanup_mode", "count")
         self.max_albums = self.config.get("max_albums", 10) if self.cleanup_mode == "count" else 0
-
-        # 封面保留天数
         self.cover_keep_days = self.config.get("cover_keep_days", 7)
-
-        # 默认PDF质量
         self.default_pdf_quality = self.config.get("default_pdf_quality", 85)
         self.default_pdf_quality = max(1, min(100, self.default_pdf_quality))
 
-        # 禁用 jmcomic 内部日志
         if not self.config.get("enable_jm_log", False):
             JmModuleConfig.disable_jm_log()
 
-        # 预热域名
         self._need_warmup = True
         try:
             asyncio.create_task(self._warmup())
@@ -135,7 +125,6 @@ class JmComicPlugin(Star):
         except RuntimeError:
             logger.warning("无事件循环，预热推迟到首次请求")
 
-        # 定时清理过期封面
         asyncio.create_task(self._cleanup_expired_covers())
 
     async def _warmup(self):
@@ -145,12 +134,10 @@ class JmComicPlugin(Star):
         except Exception as e:
             logger.warning(f"预热域名失败: {e}")
 
-    # ---------- 路径安全（仅用于日志等） ----------
     def _safe_user_dir(self, user_id: str) -> str:
         safe = re.sub(r'[^a-zA-Z0-9_-]', '_', user_id)
         return safe or "unknown_user"
 
-    # ---------- 辅助方法 ----------
     async def _get_option(self, user_id: str = None, cmd_overrides: dict = None) -> Optional['JmOption']:
         if self._need_warmup:
             asyncio.create_task(self._warmup())
@@ -160,11 +147,7 @@ class JmComicPlugin(Star):
             else:
                 option = await asyncio.to_thread(JmOption.default)
 
-            # 设置根目录
             option.dir_rule.base_dir = str(self.global_base_dir)
-
-            # 强制使用 Bd_Aid 规则，确保文件夹名为本子ID
-            option.dir_rule.rule_dsl = 'Bd_Aid'
 
             if cmd_overrides:
                 self._apply_overrides(option, cmd_overrides)
@@ -219,7 +202,6 @@ class JmComicPlugin(Star):
             logger.error(traceback.format_exc())
             raise
 
-    # ---------- 范围下载器 ----------
     def _create_range_downloader(self, start: int, end: int):
         class RangeDownloader(JmDownloader):
             def do_filter(self, detail):
@@ -233,7 +215,6 @@ class JmComicPlugin(Star):
                 return detail
         return RangeDownloader
 
-    # ---------- 命令解析 ----------
     def _parse_album_command(self, args: List[str], cmd_prefix_len: int) -> Tuple[str, Optional[Tuple[int, int]], Dict[str, Any]]:
         if len(args) <= cmd_prefix_len:
             raise ValueError("缺少本子ID")
@@ -263,7 +244,6 @@ class JmComicPlugin(Star):
             i += 1
         return album_id, (start, end) if start is not None else None, extra
 
-    # ---------- 命令 ----------
     @filter.command("jm download")
     async def command_jm_download(self, event: AstrMessageEvent):
         if not PDF_AVAILABLE:
@@ -360,7 +340,6 @@ class JmComicPlugin(Star):
         """.strip()
         yield event.plain_result(help_text)
 
-    # ---------- PDF 生成（递归搜索子目录） ----------
     async def _generate_compressed_pdf(self, image_dir: Path, output_pdf: Path, quality: int = None, max_size: int = 0) -> bool:
         if not PDF_AVAILABLE:
             logger.error("PDF 库未安装")
@@ -372,6 +351,11 @@ class JmComicPlugin(Star):
 
         if not image_dir.exists():
             logger.error(f"图片目录不存在: {image_dir.resolve()}")
+            return False
+
+        # 防止误用根目录
+        if image_dir == self.global_base_dir:
+            logger.error("图片目录被设置为根目录，终止PDF生成")
             return False
 
         try:
@@ -424,7 +408,6 @@ class JmComicPlugin(Star):
             except Exception as e:
                 logger.warning(f"清理临时目录失败: {e}")
 
-    # ---------- 下载任务 ----------
     async def _download_album_task(self, event: AstrMessageEvent, album_id: str, pack: bool, overrides: dict, extra: dict):
         user_id = event.get_sender_id()
         sent_files = []
@@ -447,9 +430,35 @@ class JmComicPlugin(Star):
                 album = result
                 downloader = None
 
-            # 由于我们强制设置了 Bd_Aid，所以 album_dir 应该是 global_base_dir / album_id
-            album_dir = self.global_base_dir / album_id
-            logger.info(f"图片下载目录: {album_dir}")
+            # 通过第一个章节的图片目录推断本子根目录
+            if len(album) == 0:
+                await event.send(event.plain_result("本子无章节，无法确定图片目录"))
+                return
+
+            first_photo = album[0]
+            first_photo_dir = Path(option.decide_image_save_dir(first_photo)).resolve()
+            logger.info(f"第一个章节图片目录: {first_photo_dir}")
+
+            # 判断是否有章节子文件夹
+            if first_photo_dir.parent == self.global_base_dir:
+                # 图片直接保存在本子目录下（无章节子文件夹）
+                album_dir = first_photo_dir
+            else:
+                # 有章节子文件夹，本子目录为父目录
+                album_dir = first_photo_dir.parent
+
+            logger.info(f"最终图片下载目录: {album_dir}")
+
+            # 安全校验
+            if album_dir == self.global_base_dir:
+                logger.error("仍然无法确定正确的本子目录，终止下载")
+                await event.send(event.plain_result("无法确定本子图片目录，请检查配置"))
+                return
+
+            if not album_dir.exists():
+                logger.error(f"图片目录不存在: {album_dir}")
+                await event.send(event.plain_result("图片目录未创建，下载可能失败"))
+                return
 
             if pack:
                 zip_path = await self._handle_zip_result(event, album_id, album_dir)
@@ -473,6 +482,7 @@ class JmComicPlugin(Star):
                 else:
                     await event.send(event.plain_result("PDF 生成失败，请查看日志"))
 
+            # 清理逻辑
             if sent_files and self.cleanup_mode == "after_send":
                 asyncio.create_task(self._delete_after_send(album_dir, sent_files))
             elif self.cleanup_mode == "count":
@@ -525,11 +535,9 @@ class JmComicPlugin(Star):
         except Exception as e:
             logger.error(f"删除失败: {e}")
 
-    # ---------- 清理旧本子（基于根目录） ----------
     async def _cleanup_old_albums(self):
         if self.cleanup_mode != "count" or self.max_albums <= 0:
             return
-        # 根目录下的所有文件夹，排除 pdfs, covers, logs
         exclude_dirs = {"pdfs", "covers", "logs"}
         try:
             album_dirs = [d for d in self.global_base_dir.iterdir() if d.is_dir() and d.name not in exclude_dirs]
@@ -567,7 +575,6 @@ class JmComicPlugin(Star):
                 except Exception as e:
                     logger.error(f"删除 ZIP 失败: {e}")
 
-    # ---------- 搜索 ----------
     async def _do_search(self, event: AstrMessageEvent, keyword: str, page: int):
         try:
             option = await self._get_option(event.get_sender_id())
@@ -601,7 +608,6 @@ class JmComicPlugin(Star):
             logger.error(traceback.format_exc())
             await event.send(event.plain_result(f"搜索失败: {e}"))
 
-    # ---------- 排行榜 ----------
     async def _do_ranking(self, event: AstrMessageEvent, rank_type: str, page: int):
         try:
             option = await self._get_option(event.get_sender_id())
@@ -631,10 +637,9 @@ class JmComicPlugin(Star):
             logger.error(traceback.format_exc())
             await event.send(event.plain_result(f"获取排行榜失败: {e}"))
 
-    # ---------- 定时清理过期封面 ----------
     async def _cleanup_expired_covers(self):
         if self.cover_keep_days <= 0:
-            return  # 0表示永久保留
+            return
         while True:
             try:
                 if self.cover_dir.exists():
@@ -646,9 +651,8 @@ class JmComicPlugin(Star):
                             logger.debug(f"已删除过期封面: {file}")
             except Exception as e:
                 logger.error(f"清理封面出错: {e}")
-            await asyncio.sleep(86400)  # 每天检查一次
+            await asyncio.sleep(86400)
 
-    # ---------- 详情（封面保存在 covers 目录） ----------
     async def _do_detail(self, event: AstrMessageEvent, album_id: str):
         cover_path = None
         try:
@@ -682,7 +686,6 @@ class JmComicPlugin(Star):
 
             node_content = [Plain("\n".join(lines))]
 
-            # 下载封面到 covers 目录
             try:
                 cover_filename = f"cover_{album_id}_{int(time.time())}.jpg"
                 cover_path = self.cover_dir / cover_filename
@@ -701,6 +704,5 @@ class JmComicPlugin(Star):
         except Exception as e:
             await event.send(event.plain_result(f"获取详情失败: {e}"))
 
-    # ---------- 插件生命周期 ----------
     async def terminate(self):
         logger.info("禁漫插件已卸载")
