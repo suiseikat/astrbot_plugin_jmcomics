@@ -54,7 +54,7 @@
    ```
 2. 克隆本仓库：
    ```bash
-   git clone https://github.com/yourusername/astrbot_plugin_jmcomic.git
+   git clone https://github.com/suiseikat/astrbot_plugin_jmcomic.git
    ```
 3. 重启 AstrBot。插件首次加载时会自动安装所需依赖。
 
