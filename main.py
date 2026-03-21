@@ -263,9 +263,9 @@ class JmComicPlugin(Star):
         if range_tuple:
             overrides['chapter_range'] = range_tuple
             start, end = range_tuple
-            yield event.plain_result(f"开始下载 {album_id} 第{start}~{end}章")
+            yield event.plain_result(f"开始下载 {album_id} 第{start}~{end}章喵")
         else:
-            yield event.plain_result(f"开始下载 {album_id}")
+            yield event.plain_result(f"开始下载 {album_id}喵")
         asyncio.create_task(self._download_album_task(event, album_id, pack=False, overrides=overrides, extra=extra))
 
     @filter.command("jmz")
@@ -284,16 +284,16 @@ class JmComicPlugin(Star):
         if range_tuple:
             overrides['chapter_range'] = range_tuple
             start, end = range_tuple
-            yield event.plain_result(f"开始打包 {album_id} 第{start}~{end}章")
+            yield event.plain_result(f"开始打包 {album_id} 第{start}~{end}章喵")
         else:
-            yield event.plain_result(f"开始打包 {album_id}")
+            yield event.plain_result(f"开始打包 {album_id}喵")
         asyncio.create_task(self._download_album_task(event, album_id, pack=True, overrides=overrides, extra=extra))
 
     @filter.command("jms")
     async def command_jms(self, event: AstrMessageEvent):
         args = event.message_str.strip().split()
         if len(args) < 2:
-            yield event.plain_result("请提供搜索关键词")
+            yield event.plain_result("请提供搜索关键词哦")
             return
         keyword = args[1]
         page = 1
@@ -312,7 +312,7 @@ class JmComicPlugin(Star):
                 rank_type = args[1].lower()
             if len(args) >= 3 and args[2].isdigit():
                 page = int(args[2])
-        yield event.plain_result(f"获取{rank_type}榜第{page}页")
+        yield event.plain_result(f"获取{rank_type}榜第{page}页喵")
         asyncio.create_task(self._do_ranking(event, rank_type, page))
 
     @filter.command("jm detail")
@@ -328,7 +328,7 @@ class JmComicPlugin(Star):
     @filter.command("jm help")
     async def command_help(self, event: AstrMessageEvent):
         help_text = """
-【禁漫下载插件使用说明】
+【jm下载插件使用说明】
 
 /jm download <本子号> [范围] [--quality=80] [--max-size=1920]
     下载本子，生成PDF。范围示例：1-10 或 5，压缩参数可选。
@@ -475,7 +475,7 @@ class JmComicPlugin(Star):
                 success = await self._generate_compressed_pdf(album_dir, pdf_path, quality, max_size)
                 if success:
                     await event.send(event.chain_result([
-                        Plain(f"本子 {album_id} 下载完成，已转换为 PDF（质量={quality}）："),
+                        Plain(f"本子 {album_id} 下载完成喵，已转换为 PDF（质量={quality}）："),
                         File(file=str(pdf_path), name=pdf_path.name)
                     ]))
                     sent_files.append(pdf_path)
@@ -594,7 +594,7 @@ class JmComicPlugin(Star):
             search_page = await self._safe_call_with_timeout(client.search, timeout=60, **search_kwargs)
             content = search_page.content if hasattr(search_page, 'content') else list(search_page) if search_page else []
             if not content:
-                await event.send(event.plain_result("没有找到相关本子"))
+                await event.send(event.plain_result("没有找到相关本子喵"))
                 return
             lines = [f"搜索「{keyword}」结果（第{page}/{getattr(search_page, 'page_count', 1)}页）："]
             for idx, (aid, info) in enumerate(content[:10], 1):
@@ -603,7 +603,7 @@ class JmComicPlugin(Star):
             lines.append(f"共{getattr(search_page, 'total', len(content))}条")
             await event.send(event.plain_result("\n".join(lines)))
         except (asyncio.TimeoutError, TimeoutError):
-            await event.send(event.plain_result("搜索超时，请稍后重试"))
+            await event.send(event.plain_result("搜索超时，请稍后重试喵"))
         except Exception as e:
             logger.error(traceback.format_exc())
             await event.send(event.plain_result(f"搜索失败: {e}"))
@@ -632,7 +632,7 @@ class JmComicPlugin(Star):
             lines.append(f"共{len(content)}条")
             await event.send(event.plain_result("\n".join(lines)))
         except (asyncio.TimeoutError, TimeoutError):
-            await event.send(event.plain_result("获取排行榜超时，请稍后重试"))
+            await event.send(event.plain_result("获取排行榜超时，请稍后重试喵"))
         except Exception as e:
             logger.error(traceback.format_exc())
             await event.send(event.plain_result(f"获取排行榜失败: {e}"))
