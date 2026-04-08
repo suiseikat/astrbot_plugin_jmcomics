@@ -1,8 +1,7 @@
 # AstrBot jm漫画下载搜索插件
 
-[![AGPL-3.0 License](https://img.shields.io/github/license/yourname/astrbot_plugin_jmcomic)](LICENSE)
+[![AGPL-3.0 License](https://img.shields.io/github/license/suiseikat/astrbot_plugin_jmcomic)](LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
-[![AstrBot](https://img.shields.io/badge/AstrBot-%E6%8F%92%E4%BB%B6-orange)](https://github.com/Soulter/AstrBot)
 
 本插件为 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 提供了JMComic的搜索、下载、自动生成 PDF 或 ZIP 打包功能，支持**范围下载**、**排行榜**、**图文详情**，并内置两种磁盘清理模式，有效管理存储空间。
 
@@ -163,19 +162,20 @@
 
 ---
 
-⚙️ 配置选项
+## ⚙️ 配置选项
 
-在 AstrBot 管理面板的插件配置页，可以为该插件添加以下配置（_conf_schema.json 已内置）：
+在 AstrBot 管理面板的插件配置页，可以为该插件添加以下配置（`_conf_schema.json` 已内置）：
 
-配置项 类型 默认值 说明
-download_dir string ./data/jm_downloads 下载根目录，所有下载的文件将保存在此目录下。
-cleanup_mode string count 清理模式：count（按数量保留）或 after_send（发送后立即删除本次下载的所有文件）。
-max_albums int 10 当 cleanup_mode 为 count 时，每个用户最多保留的本子数量（0 表示不限制）。
-delete_temp_cover bool true 详情指令中，发送封面图片后是否删除临时封面文件。
-enable_jm_log bool false 是否显示 jmcomic 库的内部调试日志（用于排查问题）。
-option_file string "" 自定义 jmcomic 选项配置文件路径（YAML 格式），留空则使用内置默认配置。
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `download_dir` | string | `./data/jm_downloads` | 下载根目录，所有下载的文件将保存在此目录下。 |
+| `cleanup_mode` | string | `count` | 清理模式：`count`（按数量保留）或 `after_send`（发送后立即删除本次下载的所有文件）。 |
+| `max_albums` | int | `10` | 当 `cleanup_mode` 为 `count` 时，每个用户最多保留的本子数量（0 表示不限制）。 |
+| `delete_temp_cover` | bool | `true` | 详情指令中，发送封面图片后是否删除临时封面文件。 |
+| `enable_jm_log` | bool | `false` | 是否显示 jmcomic 库的内部调试日志（用于排查问题）。 |
+| `option_file` | string | `""` | 自定义 jmcomic 选项配置文件路径（YAML 格式），留空则使用内置默认配置。 |
 
-修改配置后，需要重启 AstrBot 才能生效。
+修改配置后，**需要重启 AstrBot 才能生效**。
 
 ---
 
@@ -256,4 +256,3 @@ A: 这是因为 Docker 容器的文件系统与宿主机隔离，插件生成的
 
 如有任何问题或建议，欢迎提交 Issue 或 Pull Request。
 
-```
