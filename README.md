@@ -51,58 +51,61 @@
 1. 进入 AstrBot 的插件目录：
    ```bash
    cd /path/to/AstrBot/data/plugins/
-   ```
-2. 克隆本仓库：
+```
+
+1. 克隆本仓库：
    ```bash
    git clone https://github.com/suiseikat/astrbot_plugin_jmcomic.git
    ```
-3. 重启 AstrBot。插件首次加载时会自动安装所需依赖。
+2. 重启 AstrBot。插件首次加载时会自动安装所需依赖。
 
-### 方法二：手动安装（ZIP 上传）
+方法二：手动安装（ZIP 上传）
 
 如果使用 AstrBot 后台的“上传插件”功能遇到临时目录问题，建议直接使用文件夹安装：
 
 1. 下载本仓库的 ZIP 文件并解压。
-2. 将解压后的文件夹（例如 `astrbot_plugin_jmcomic`）复制到 AstrBot 的 `data/plugins/` 目录下。
+2. 将解压后的文件夹（例如 astrbot_plugin_jmcomic）复制到 AstrBot 的 data/plugins/ 目录下。
 3. 重启 AstrBot。
 
 ---
 
-## 🚀 使用说明
+🚀 使用说明
 
-所有命令以 `/jm` 开头，支持在群聊或私聊中使用。
+所有命令以 /jm 开头，支持在群聊或私聊中使用。
 
-### 下载本子（PDF）
+下载本子（PDF）
 
 ```
 /jm download <本子号> [范围]
 ```
 
-- 默认（不加范围）：下载本子全部章节 → 合并为 PDF → 发送 PDF 文件。
-- 加范围：`1-10` 或 `5`，下载指定章节。
+· 默认（不加范围）：下载本子全部章节 → 合并为 PDF → 发送 PDF 文件。
+· 加范围：1-10 或 5，下载指定章节。
 
-**示例**：
+示例：
+
 ```
 /jm download 123
 /jm download 123 1-5
 /jm download 123 3
 ```
 
-### 下载本子（ZIP 打包）
+下载本子（ZIP 打包）
 
 ```
 /jmz <本子号> [范围]
 ```
 
-- 下载本子 → 打包为 ZIP → 发送 ZIP 文件。
+· 下载本子 → 打包为 ZIP → 发送 ZIP 文件。
 
-**示例**：
+示例：
+
 ```
 /jmz 123
 /jmz 123 1-5
 ```
 
-### 搜索本子
+搜索本子
 
 ```
 /jms <关键词> [页码]
@@ -110,31 +113,33 @@
 
 默认页码为 1，最多显示前 10 条结果。
 
-**示例**：
+示例：
+
 ```
 /jms 火影
 /jms 海贼王 2
 ```
 
-### 排行榜
+排行榜
 
 ```
 /jmr [week|day] [页码]
 ```
 
-- 不加参数：月榜第 1 页。
-- 加 `week`：周榜。
-- 加 `day`：日榜。
-- 可选页码。
+· 不加参数：月榜第 1 页。
+· 加 week：周榜。
+· 加 day：日榜。
+· 可选页码。
 
-**示例**：
+示例：
+
 ```
 /jmr
 /jmr week 2
 /jmr day
 ```
 
-### 查看本子详情
+查看本子详情
 
 ```
 /jm detail <本子号>
@@ -142,12 +147,13 @@
 
 返回一条合并转发消息，包含标题、作者、收藏数、标签、前 10 个章节列表，并附带封面图片。
 
-**示例**：
+示例：
+
 ```
-/jm detail 123
+/jm detail 114514
 ```
 
-### 帮助
+帮助
 
 ```
 /jm help
@@ -157,24 +163,23 @@
 
 ---
 
-## ⚙️ 配置选项
+⚙️ 配置选项
 
-在 AstrBot 管理面板的插件配置页，可以为该插件添加以下配置（`_conf_schema.json` 已内置）：
+在 AstrBot 管理面板的插件配置页，可以为该插件添加以下配置（_conf_schema.json 已内置）：
 
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `download_dir` | string | `./data/jm_downloads` | 下载根目录，所有下载的文件将保存在此目录下。 |
-| `cleanup_mode` | string | `count` | 清理模式：`count`（按数量保留）或 `after_send`（发送后立即删除本次下载的所有文件）。 |
-| `max_albums` | int | `10` | 当 `cleanup_mode` 为 `count` 时，每个用户最多保留的本子数量（0 表示不限制）。 |
-| `delete_temp_cover` | bool | `true` | 详情指令中，发送封面图片后是否删除临时封面文件。 |
-| `enable_jm_log` | bool | `false` | 是否显示 jmcomic 库的内部调试日志（用于排查问题）。 |
-| `option_file` | string | `""` | 自定义 jmcomic 选项配置文件路径（YAML 格式），留空则使用内置默认配置。 |
+配置项 类型 默认值 说明
+download_dir string ./data/jm_downloads 下载根目录，所有下载的文件将保存在此目录下。
+cleanup_mode string count 清理模式：count（按数量保留）或 after_send（发送后立即删除本次下载的所有文件）。
+max_albums int 10 当 cleanup_mode 为 count 时，每个用户最多保留的本子数量（0 表示不限制）。
+delete_temp_cover bool true 详情指令中，发送封面图片后是否删除临时封面文件。
+enable_jm_log bool false 是否显示 jmcomic 库的内部调试日志（用于排查问题）。
+option_file string "" 自定义 jmcomic 选项配置文件路径（YAML 格式），留空则使用内置默认配置。
 
-修改配置后，**需要重启 AstrBot 才能生效**。
+修改配置后，需要重启 AstrBot 才能生效。
 
 ---
 
-## 📁 文件结构
+📁 文件结构
 
 ```
 astrbot_plugin_jmcomic/
@@ -190,36 +195,65 @@ astrbot_plugin_jmcomic/
 
 ---
 
-## ❓ 常见问题
+❓ 常见问题
 
-### Q: 上传 ZIP 安装时提示 `FileNotFoundError: [Errno 2] No such file or directory`
-A: 这是 AstrBot 临时目录不存在导致的。请使用**方法一（git clone）** 或**方法二（手动解压复制文件夹）** 安装，无需上传 ZIP。
+Q: 上传 ZIP 安装时提示 FileNotFoundError: [Errno 2] No such file or directory
 
-### Q: 下载后没有生成 PDF？
-A: 请检查是否成功安装了 `img2pdf`。插件会自动尝试安装，若失败请手动执行 `pip install img2pdf`。也可查看插件日志（位于 `下载目录/logs/`）获取详细错误。
+A: 这是 AstrBot 临时目录不存在导致的。请使用方法一（git clone） 或方法二（手动解压复制文件夹） 安装，无需上传 ZIP。
 
-### Q: 如何修改默认保留的本子数量？
-A: 在插件配置中设置 `max_albums` 项，并将 `cleanup_mode` 设为 `count`。
+Q: 下载后没有生成 PDF？
 
-### Q: 是否支持多用户隔离？
+A: 请检查是否成功安装了 img2pdf。插件会自动尝试安装，若失败请手动执行 pip install img2pdf。也可查看插件日志（位于 下载目录/logs/）获取详细错误。
+
+Q: 如何修改默认保留的本子数量？
+
+A: 在插件配置中设置 max_albums 项，并将 cleanup_mode 设为 count。
+
+Q: 是否支持多用户隔离？
+
 A: 支持。每个用户（QQ 号）拥有独立的下载子目录，清理操作也仅针对当前用户。
 
-### Q: 详情命令不显示封面？
+Q: 详情命令不显示封面？
+
 A: 可能是封面下载失败，请检查网络和 jmcomic 配置。如果不需要封面，可以忽略该错误，插件仍会发送文本详情。
 
+Q: 插件在 Docker 部署的 AstrBot 中无法发送文件（PDF/ZIP），提示找不到文件？或者 NapCat 报错“文件消息缺少参数”？
+
+A: 这是因为 Docker 容器的文件系统与宿主机隔离，插件生成的文件默认保存在容器内部，外部无法访问。
+解决方法：
+
+1. 运行 AstrBot 容器时，将宿主机的持久化目录挂载到容器内的 /AstrBot/data。
+   ```bash
+   docker run -d \
+     --name astrbot \
+     -v /宿主机/astrbot_data:/AstrBot/data \
+     soulter/astrbot:latest
+   ```
+   · /宿主机/astrbot_data 是你宿主机上用于存储 AstrBot 数据的目录（可自行创建）。
+2. 运行 NapCat 容器时，也需要将同一个宿主机目录挂载到 NapCat 容器内的 /AstrBot/data。
+   ```bash
+   docker run -d \
+     --name napcat \
+     -v /宿主机/astrbot_data:/AstrBot/data \
+     ...   # 其他 NapCat 参数
+   ```
+   · 这样 NapCat 就能直接读取 AstrBot 插件下载的 PDF/ZIP 文件，解决“文件消息缺少参数”错误。
+
+· 如果已经运行了容器，请先停止并删除旧容器，再重新创建。
+
 ---
 
-## 📄 许可证
+📄 许可证
 
-本项目采用 **AGPL-3.0** 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
-
----
-
-## 🙏 致谢
-
-- [hect0x7/JMComic-Crawler-Python](https://github.com/hect0x7/JMComic-Crawler-Python) – 强大的禁漫爬虫库。
-- [Soulter/AstrBot](https://github.com/Soulter/AstrBot) – AstrBot插件模板
+本项目采用 AGPL-3.0 许可证。详情请参阅 LICENSE 文件。
 
 ---
 
-如有任何问题或建议，欢迎提交 [Issue](https://github.com/yourusername/astrbot_plugin_jmcomic/issues) 或 Pull Request。
+🙏 致谢
+
+· hect0x7/JMComic-Crawler-Python – 强大的禁漫爬虫库。
+· Soulter/AstrBot – AstrBot插件模板
+
+如有任何问题或建议，欢迎提交 Issue 或 Pull Request。
+
+```
