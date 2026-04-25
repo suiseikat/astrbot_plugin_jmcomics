@@ -150,8 +150,9 @@
 
 ```
 /jm detail 1251656
-<img width="642" height="1389" alt="image" src="https://github.com/user-attachments/assets/18a838de-d6b1-44a9-b6a3-97e0c0525612" />
 ```
+<img width="642" height="1389" alt="image" src="https://github.com/user-attachments/assets/18a838de-d6b1-44a9-b6a3-97e0c0525612" />
+
 帮助
 
 ```
